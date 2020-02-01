@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2018 Brad House
 # MIT license
+# adapted to the SB6183 and to dirtyconfig mode, by GLyndon
  
 import html.parser
 import os
