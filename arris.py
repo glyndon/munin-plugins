@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # Copyright 2018 Brad House
 # MIT license
-# adapted to the SB6183 and to dirtyconfig mode, by GLyndon
- 
+# Modified for SB6183 by Glyndon, 2020/2/1
+
 import html.parser
 import os
 import urllib.request
@@ -24,15 +24,15 @@ class ArrisHTMLParser(html.parser.HTMLParser):
             if key == 'id' and value == 'thisModelNumberIs':
                 self.state = 'model'
         if tag == 'table':
-          self.state = 'table'
-          self.table_type = None
-          self.row = 0
-          self.col = 0
+            self.state = 'table'
+            self.table_type = None
+            self.row = 0
+            self.col = 0
         if tag == 'tr':
-          self.row = self.row + 1
-          self.col = 0
+            self.row = self.row + 1
+            self.col = 0
         if tag == 'td':
-          self.col = self.col + 1
+            self.col = self.col + 1
 
     def handle_endtag(self, tag):
         if tag == 'table' and self.state == 'table':
@@ -44,7 +44,7 @@ class ArrisHTMLParser(html.parser.HTMLParser):
             if self.state == 'model':
                 self.result_model = data
                 self.state = None
-            if self.state == 'table' and self.table_type == None and self.row == 1 and self.col == 0:
+            if self.state == 'table' and self.table_type is None and self.row == 1 and self.col == 0:
                 if data == 'Downstream Bonded Channels':
                     self.table_type = 'downstream'
                 if data == 'Upstream Bonded Channels':
@@ -53,7 +53,7 @@ class ArrisHTMLParser(html.parser.HTMLParser):
                 idx = self.row - 3
                 if len(self.result_downstream) <= idx:
                     self.result_downstream.append({})
-                if self.col == 1: # Channel ID
+                if self.col == 1: # Channel position
                     self.result_downstream[idx]['channel']               = data
                 if self.col == 2: # Lock Status
                     self.result_downstream[idx]['locked']                = data
@@ -67,9 +67,9 @@ class ArrisHTMLParser(html.parser.HTMLParser):
                     self.result_downstream[idx]['power_dbmv']            = data.split(" ")[0]
                 if self.col == 7: # SNR
                     self.result_downstream[idx]['snr_db']                = data.split(" ")[0]
-                if self.col == 8: # Corrected
+                if self.col == 8: # Corrected, div by 5 for a per-minute rate
                     self.result_downstream[idx]['errors_corrected']      = data
-                if self.col == 9: # Uncorrectables
+                if self.col == 9: # Uncorrectables, div by 5 for a per-minute rate
                     self.result_downstream[idx]['errors_uncorrectables'] = data
             if self.state == 'table' and self.table_type == 'upstream' and self.row > 2 and self.col > 0:
                 idx = self.row - 3
@@ -146,13 +146,13 @@ def merge_result(data):
         data = {}
 
     # populate model
-    if not 'model' in data:
+    if 'model' not in data:
         if 'model' in old_data:
             data['model'] = old_data['model']
 
 
     # populate downstream_channels
-    if not 'downstream_channels' in data or len(data['downstream_channels']) == 0:
+    if 'downstream_channels' not in data or not data['downstream_channels']:
         isgood = False
         data['downstream_channels'] = {}
         # Create Data
@@ -169,7 +169,7 @@ def merge_result(data):
                 data['downstream_channels'][channel]['errors_uncorrectables'] = None
 
     # populate upstream_channels
-    if not 'upstream_channels' in data or len(data['upstream_channels']) == 0:
+    if 'upstream_channels' not in data or not data['upstream_channels']:
         isgood = False
         data['upstream_channels'] = {}
         # Create data
@@ -186,7 +186,7 @@ def merge_result(data):
 
     # Cache fully good result
     if isgood:
-        print("writing state file")
+        # print("writing state file")
         with open(os.environ['MUNIN_STATEFILE'], 'w') as f:
             json.dump(data, f, indent=2, sort_keys=True)
 
@@ -195,137 +195,130 @@ def merge_result(data):
 
 result = parse_url("http://192.168.100.1")
 
-# from pprint import pprint
-# pprint(result)
-# import json
-# print (json.dumps(result, indent=2))
-# sys.exit(1)
-
 result = merge_result(result)
 
-dirtyConfig = False
 try:
-    if os.environ['MUNIN_CAP_DIRTYCONFIG'] == '1':  # has to exist and be '1'
-        dirtyConfig = True
+    dirtyConfig = os.environ['MUNIN_CAP_DIRTYCONFIG'] == '1'  # has to exist and be '1'
 except KeyError:
-    pass
+    dirtyConfig = False
 
-# if len(sys.argv) == 2 and sys.argv[1] == 'config':
 if 'config' in sys.argv:
-    print ("multigraph arris_downsnr")
-    print ("graph_title Arris", result['model'] or 'Modem', "Downstream Signal to Noise (dB)")
-    print ("graph_vlabel db (decibels)")
-    print ("graph_category x-wan-arris")
-    print ("update_rate 60")
+    print("multigraph arris_downsnr")
+    print("graph_title Arris", result['model'] or 'Modem', "[2] Downstream Signal to Noise (dB)")
+    print("graph_vlabel db (decibels)")
+    print("graph_category x-wan-arris")
+    # print("update_rate 60")
     for key in sorted(result['downstream_channels']):
-        print("downsnr{0}.label Channel {0}".format(key))
+        print("downsnr{0}.label Channel {1}".format(key, result['downstream_channels'][key]['channel_id']))
         print("downsnr{0}.warning 33:".format(key))
-    print ("")
+    print("")
 
-    print ("multigraph arris_downfreq")
-    print ("graph_title Arris", result['model'] or 'Modem', "Downstream Channel frequency")
-    print ("graph_vlabel MHz")
-    print ("graph_category x-wan-arris")
-    print ("update_rate 60")
+    print("multigraph arris_downfreq")
+    print("graph_title Arris", result['model'] or 'Modem', "[6] Downstream Channel frequency")
+    print("graph_vlabel MHz")
+    print("graph_category x-wan-arris")
+    # print("update_rate 60")
     for key in sorted(result['downstream_channels']):
-        print("downfreq{0}.label Channel {0}".format(key))
-    print ("")
+        print("downfreq{0}.label Channel {1}".format(key, result['downstream_channels'][key]['channel_id']))
+    print("")
 
-    print ("multigraph arris_downpwr")
-    print ("graph_title Arris", result['model'] or 'Modem', "Downstream Power Level")
-    print ("graph_vlabel dBmV")
-    print ("graph_category x-wan-arris")
-    print ("update_rate 60")
+    print("multigraph arris_downpwr")
+    print("graph_title Arris", result['model'] or 'Modem', "[1] Downstream Power Level")
+    print("graph_vlabel dBmV")
+    print("graph_category x-wan-arris")
+    # print("update_rate 60")
     for key in sorted(result['downstream_channels']):
-        print("downpwr{0}.label Channel {0}".format(key))
+        print("downpwr{0}.label Channel {1}".format(key, result['downstream_channels'][key]['channel_id']))
         print("downpwr{0}.warning -7:8".format(key))
-    print ("")
+    print("")
 
-    print ("multigraph arris_downcorrected")
-    print ("graph_title Arris", result['model'] or 'Modem', "Downstream Corrected Errors")
-    print ("graph_vlabel corrected")
-    print ("graph_category x-wan-arris")
-    print ("update_rate 60")
+    print("multigraph arris_downcorrected")
+    print("graph_title Arris", result['model'] or 'Modem', "[3] Downstream Corrected Errors")
+    print("graph_vlabel Blocks per Minute")
+    print("graph_category x-wan-arris")
+    print("graph_scale no")
+    print("graph_period minute")
+    # print("update_rate 60")
     for key in sorted(result['downstream_channels']):
-        print("downcorrected{0}.label Channel {0}".format(key))
+        print("downcorrected{0}.label Channel {1}".format(key, result['downstream_channels'][key]['channel_id']))
         print("downcorrected{0}.type DERIVE".format(key))
         print("downcorrected{0}.min 0".format(key))
-    print ("")
+    print("")
 
-    print ("multigraph arris_downuncorrected")
-    print ("graph_title Arris", result['model'] or 'Modem', "Downstream Uncorrected Errors")
-    print ("graph_vlabel uncorrected")
-    print ("graph_category x-wan-arris")
-    print ("update_rate 60")
+    print("multigraph arris_downuncorrected")
+    print("graph_title Arris", result['model'] or 'Modem', "[4] Downstream Uncorrected Errors")
+    print("graph_vlabel Blocks per Minute")
+    print("graph_category x-wan-arris")
+    print("graph_scale no")
+    print("graph_period minute")
+    # print("update_rate 60")
     for key in sorted(result['downstream_channels']):
-        print("downuncorrected{0}.label Channel {0}".format(key))
+        print("downuncorrected{0}.label Channel {1}".format(key, result['downstream_channels'][key]['channel_id']))
         print("downuncorrected{0}.type DERIVE".format(key))
         print("downuncorrected{0}.min 0".format(key))
-    print ("")
+    print("")
 
-    print ("multigraph arris_uppwr")
-    print ("graph_title Arris", result['model'] or 'Modem', "Upstream Power")
-    print ("graph_vlabel dBmV")
-    print ("graph_category x-wan-arris")
-    print ("update_rate 60")
+    print("multigraph arris_uppwr")
+    print("graph_title Arris", result['model'] or 'Modem', "[5] Upstream Power")
+    print("graph_vlabel dBmV")
+    print("graph_category x-wan-arris")
+    # print("update_rate 60")
     for key in sorted(result['upstream_channels']):
-        print("uppwr{0}.label Channel {0}".format(key))
+        print("uppwr{0}.label Channel {1}".format(key, result['upstream_channels'][key]['channel_id']))
         print("uppwr{0}.warning 35:49".format(key))
-    print ("")
+    print("")
 
-    print ("multigraph arris_upfreq")
-    print ("graph_title Arris", result['model'] or 'Modem', "Upstream Frequency")
-    print ("graph_vlabel MHz")
-    print ("graph_category x-wan-arris")
-    print ("update_rate 60")
+    print("multigraph arris_upfreq")
+    print("graph_title Arris", result['model'] or 'Modem', "[7] Upstream Frequency")
+    print("graph_vlabel MHz")
+    print("graph_category x-wan-arris")
+    # print("update_rate 60")
     for key in sorted(result['upstream_channels']):
-        print("upfreq{0}.label Channel {0}".format(key))
-    print ("")
+        print("upfreq{0}.label Channel {1}".format(key, result['upstream_channels'][key]['channel_id']))
+    print("")
 
-if dirtyConfig or not 'config' in sys.argv:
-# if len(sys.argv) == 1 or (len(sys.argv) == 2 and sys.argv[1] == 'fetch'):
-    print ("multigraph arris_downsnr")
+if dirtyConfig or 'config' not in sys.argv:
+    print("multigraph arris_downsnr")
     for key in sorted(result['downstream_channels']):
         item=result['downstream_channels'][key]
         print("downsnr{0}.value {1}".format(key, item['snr_db'] or 'U'))
-    print ("")
+    print("")
 
-    print ("multigraph arris_downfreq")
+    print("multigraph arris_downfreq")
     for key in sorted(result['downstream_channels']):
         item=result['downstream_channels'][key]
         print("downfreq{0}.value {1}".format(key, item['frequency_mhz'] or 'U'))
-    print ("")
+    print("")
 
-    print ("multigraph arris_downpwr")
+    print("multigraph arris_downpwr")
     for key in sorted(result['downstream_channels']):
         item=result['downstream_channels'][key]
         print("downpwr{0}.value {1}".format(key, item['power_dbmv'] or 'U'))
-    print ("")
+    print("")
 
-    print ("multigraph arris_downcorrected")
+    print("multigraph arris_downcorrected")
     for key in sorted(result['downstream_channels']):
         item=result['downstream_channels'][key]
         print("downcorrected{0}.value {1}".format(key, item['errors_corrected'] or 'U'))
-    print ("")
+    print("")
 
-    print ("multigraph arris_downuncorrected")
+    print("multigraph arris_downuncorrected")
     for key in sorted(result['downstream_channels']):
         item=result['downstream_channels'][key]
         print("downuncorrected{0}.value {1}".format(key, item['errors_uncorrectables'] or 'U'))
-    print ("")
+    print("")
 
-    print ("multigraph arris_uppwr")
+    print("multigraph arris_uppwr")
     for key in sorted(result['upstream_channels']):
         item=result['upstream_channels'][key]
         print("uppwr{0}.value {1}".format(key, item['power_dbmv'] or 'U'))
-    print ("")
+    print("")
 
-    print ("multigraph arris_upfreq")
+    print("multigraph arris_upfreq")
     for key in sorted(result['upstream_channels']):
         item=result['upstream_channels'][key]
         print("upfreq{0}.value {1}".format(key, item['frequency_mhz'] or 'U'))
-    print ("")
+    print("")
     sys.exit(0)
-
 
 sys.exit(1)
