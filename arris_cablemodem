@@ -179,7 +179,6 @@ def merge_result(data):
 
     # Cache fully good result
     if isgood:
-        print("writing state file")
         with open(os.environ['MUNIN_STATEFILE'], 'w') as f:
             json.dump(data, f, indent=2, sort_keys=True)
 
